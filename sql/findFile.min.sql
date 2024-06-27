@@ -1,0 +1,1 @@
+SELECT etag FROM vw_File WHERE path = :path;

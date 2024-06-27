@@ -1,0 +1,1 @@
+INSERT INTO sp_addFilePart (path, data) VALUES (:path, :data);

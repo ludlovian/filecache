@@ -1,0 +1,1 @@
+SELECT data FROM vw_FileContent WHERE path = :path;

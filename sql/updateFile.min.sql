@@ -1,0 +1,1 @@
+INSERT INTO sp_updateFile (path, etag) VALUES (:path, :etag);

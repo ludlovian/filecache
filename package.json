@@ -1,0 +1,32 @@
+{
+  "name": "@ludlovian/filecache",
+  "version": "0.0.0",
+  "description": "Cache of files",
+  "main": "src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "scripts": {
+    "clean": "rm -rf coverage/ node_modules/.cache/",
+    "lint": "standard '{src,test}/**/*.mjs'|snazzy",
+    "format": "prettier-standard '{src,test}/**/*.mjs'",
+    "test": "c8 node --test",
+    "coverage": "npm run test && c8 report --reporter=html && sirv coverage/ -p 8000 -H"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ludlovian/filecache.git"
+  },
+  "author": "",
+  "license": "Unlicense",
+  "bugs": {
+    "url": "https://github.com/ludlovian/filecache/issues"
+  },
+  "homepage": "https://github.com/ludlovian/filecache#readme",
+  "devDependencies": {
+    "better-sqlite3": "^11.0.0"
+  },
+  "peerDependencies": {
+    "better-sqlite3": "^11.0.0"
+  }
+}
