@@ -1,1 +1,0 @@
-INSERT INTO sp_updateFile ( path, status, mtime, size, ctype ) VALUES ( :path, :status, :mtime, :size, :ctype );

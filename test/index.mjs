@@ -34,6 +34,10 @@ suite('filecache', { concurrency: false }, () => {
     act = await cache.readFile(file)
     assert.ok(Buffer.compare(act, exp) === 0)
 
+    // check via find
+    act = await cache.findFile(file)
+    assert.ok(act.status === FileCache.CACHED)
+
     cache.clear(file)
   })
 
@@ -53,8 +57,9 @@ suite('filecache', { concurrency: false }, () => {
   })
 
   test('try to cache a file that doesnt exist', async () => {
+    const file = join(base, 'blah')
     await assert.rejects(
-      () => cache.readFile(join(base, 'blah')),
+      () => cache.readFile(file),
       err => {
         assert.ok(err.code === 'ENOENT')
         return true
@@ -62,14 +67,17 @@ suite('filecache', { concurrency: false }, () => {
     )
 
     await assert.rejects(
-      () => cache.readFile(join(base, 'blah')),
+      () => cache.readFile(file),
       err => {
         assert.ok(err.code === 'ENOENT')
         return true
       }
     )
 
-    cache.clear(join(base, 'blah'))
+    const act = await cache.findFile(file)
+    assert.strictEqual(act, undefined)
+
+    cache.clear(file)
   })
 
   test('read a file by readable stream', (t, done) => {

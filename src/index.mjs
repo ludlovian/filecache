@@ -3,78 +3,111 @@ import { resolve, join } from 'node:path'
 import { Readable } from 'node:stream'
 import SQLite from 'better-sqlite3'
 import { lookup } from 'mrmime'
-import {
-  ddl,
-  findFile,
-  readFile,
-  addFilePart,
-  updateFile,
-  removeFile,
-  reset
-} from './sql.mjs'
+import { ddl, storedProc, query } from './db.mjs'
 
 const BUFFERSIZE = 64 * 1024
 const NOOP = () => undefined
 
 export default class FileCache {
+  static NOTEXIST = 0
+  static METADATA = 1
+  static UPDATING = 2
+  static CACHED = 3
+
   #db
   #findFile
   #readFile
   #addFilePart
   #updateFile
   #removeFile
+  #reset
+
   constructor (dbFile) {
     this.#db = SQLite(dbFile)
-    this.#db.exec(ddl)
-    this.#findFile = this.#db.prepare(findFile)
-    this.#readFile = this.#db.prepare(readFile).pluck()
-    this.#addFilePart = this.#db.prepare(addFilePart)
-    this.#updateFile = this.#db.prepare(updateFile)
-    this.#removeFile = this.#db.prepare(removeFile)
+    this.#prepareDB()
+  }
+
+  #prepareDB () {
+    const db = this.#db
+    db.exec(ddl)
+    this.#findFile = query(db, 'vw_File', 'path')
+    this.#readFile = query(db, 'vw_FileContent', 'path', {
+      pluck: true,
+      iterate: true
+    })
+    this.#addFilePart = storedProc(db, 'sp_addFilePart')
+    this.#updateFile = storedProc(db, 'sp_updateFile')
+    this.#removeFile = storedProc(db, 'sp_removeFile')
+    this.#reset = storedProc(db, 'sp_reset', true)
+  }
+
+  // Finds a file and returns the metadata for it, or undefined
+  // if the file does not exist.
+  //
+  // Caches the metadata if not already stored.
+  async findFile (path) {
+    path = resolve(path)
+
+    const details = this.#findFile({ path })
+    if (details) {
+      return details.status === FileCache.NOTEXIST ? undefined : details
+    }
+
+    try {
+      const stats = await stat(path)
+      const details = {
+        status: FileCache.METADATA,
+        mtime: +stats.mtime,
+        size: stats.size,
+        ctype: lookup(path)
+      }
+
+      this.#updateFile({ path, ...details })
+      return details
+    } catch (err) {
+      // defensive check
+      /* c8 ignore start */
+      if (err.code !== 'ENOENT') throw err
+      /* c8 ignore end */
+
+      this.#updateFile({
+        path,
+        status: FileCache.NOTEXIST,
+        mtime: null,
+        size: null,
+        ctype: null
+      })
+      return undefined
+    }
   }
 
   async * #readFileParts (path) {
     path = resolve(path)
-    let details = this.#findFile.get({ path })
-    if (details?.status === 0) {
+    let details = this.#findFile({ path })
+    if (!details) {
+      details = await this.findFile(path)
+    }
+
+    if (!details || details.status === FileCache.NOTEXIST) {
       // we already know it doesn't exist, so throw an ENOENT
       const err = new Error('ENOENT')
       err.code = 'ENOENT'
       throw err
     }
 
-    if (details?.status === 1) {
-      // we have it so serve from the cache
-      for (const data of this.#readFile.iterate({ path })) {
+    if (details.status === FileCache.CACHED) {
+      for (const data of this.#readFile({ path })) {
         yield data
       }
       return
     }
 
-    const shouldCache = !details
-    // we don't have it so we must read it from the file system
+    // we need to read it from the file system.
+    // If nobody else is, we should also cache it
+    const shouldCache = details.status === FileCache.METADATA
     if (shouldCache) {
-      try {
-        const stats = await stat(path)
-        details = {
-          status: null, // updating
-          mtime: +stats.mtime,
-          size: stats.size,
-          ctype: lookup(path) ?? null
-        }
-        this.#updateFile.run({ path, ...details })
-      } catch (err) {
-        if (err.code === 'ENOENT') {
-          this.#updateFile.run({
-            path,
-            status: 0,
-            mtime: null,
-            size: null,
-            ctype: null
-          })
-        }
-        throw err
-      }
+      details.status = FileCache.UPDATING
+      this.#updateFile({ path, ...details })
     }
 
     // Allocate a buffer and start reading chunks into it
@@ -86,7 +119,7 @@ export default class FileCache {
         const { bytesRead } = await fh.read(buff)
         const data = buff.slice(0, bytesRead)
         if (shouldCache) {
-          this.#addFilePart.run({ path, data })
+          this.#addFilePart({ path, data })
         }
         yield data
         if (bytesRead < buff.byteLength) {
@@ -95,8 +128,8 @@ export default class FileCache {
       }
 
       if (shouldCache) {
-        details.status = 1
-        this.#updateFile.run({ path, ...details })
+        details.status = FileCache.CACHED
+        this.#updateFile({ path, ...details })
       }
     } finally {
       fh.close()
@@ -116,11 +149,11 @@ export default class FileCache {
   }
 
   clear (path) {
-    this.#removeFile.run({ path })
+    this.#removeFile({ path })
   }
 
   reset () {
-    this.#db.exec(reset)
+    this.#reset()
   }
 
   async prefetch ({ file, dir, filter }) {
@@ -136,17 +169,17 @@ export default class FileCache {
       this.#db.pragma('wal_checkpoint(TRUNCATE);')
     } else if (file) {
       const stats = await stat(file)
-      const details = this.#findFile.get({ path: file })
+      const details = this.#findFile({ path: file })
       // skip this fetch if we have a valid record that matches
       if (
         details &&
-        details.status === 1 &&
+        details.status === FileCache.CACHED &&
         details.mtime === +stats.mtime &&
         details.size === stats.size
       ) {
         return
       }
-      this.#removeFile.run({ path: file })
+      this.#removeFile({ path: file })
       for await (const chunk of this.#readFileParts(file)) {
         NOOP(chunk)
       }

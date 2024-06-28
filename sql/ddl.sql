@@ -14,17 +14,19 @@ BEGIN TRANSACTION;
 -- with the path and metadata
 
 -- Also holds a flag for status, with the following meaning
--- - truthy - the file exists and can be used
--- - falsey - this is a record saying the file does not exist
--- - NULL   - the file probably exists, but is being updated so do not
---            used the contents
+--   - 0 NOTEXIST   - the file does not exist
+--   - 1 METADATA   - we have metadata but no contents
+--                    if we read, we should add the contents
+--   - 2 UPDATING   - we have metadata, and somebody is already
+--                    updating the contents (we hope)
+--   - 3 CACHED     - we have the contents
 
 
 CREATE TABLE IF NOT EXISTS
   t_File (
     id      INTEGER PRIMARY KEY,
     path    TEXT NOT NULL UNIQUE,
-    status  INT,
+    status  INT NOT NULL,
     mtime   INT,
     size    INT,
     ctype   TEXT
@@ -38,11 +40,11 @@ CREATE TABLE IF NOT EXISTS
 
 CREATE TABLE IF NOT EXISTS
   t_FileContent (
-    id      INTEGER,
-    ix      INTEGER,
-    data    BLOB,
+    id      INTEGER NOT NULL,
+    ix      INTEGER NOT NULL,
+    data    BLOB NOT NULL,
     PRIMARY KEY (id, ix),
-    FOREIGN KEY (id) REFERENCES t_File(id)
+    FOREIGN KEY (id) REFERENCES t_File(id) ON DELETE CASCADE
   );
 
 -------------------------------------
@@ -68,10 +70,10 @@ CREATE VIEW vw_File AS
 -- To read the content of a file
 
 DROP VIEW IF EXISTS vw_FileContent;
-CREATE VIEW vw_FileContent (path, ix, data) AS
-    SELECT  f.path,
-            c.ix,
-            c.data
+CREATE VIEW vw_FileContent (data, path, ix) AS
+    SELECT  c.data,
+            f.path,
+            c.ix
     FROM    t_File f
     JOIN    t_FileContent c
       ON    f.id = c.id
@@ -95,13 +97,6 @@ CREATE VIEW sp_removeFile(path) AS
 CREATE TRIGGER sp_removeFile_t
   INSTEAD OF INSERT ON sp_removeFile
 BEGIN
-  DELETE FROM t_FileContent
-    WHERE id IN (
-      SELECT  id
-        FROM  t_File
-        WHERE path = NEW.path
-      );
-
   DELETE FROM t_File
     WHERE   path = NEW.path;
 
@@ -130,10 +125,11 @@ BEGIN
     INTO  t_File (path)
     VALUES (NEW.path);
 
+  -- Set the file status to UPDATING
   UPDATE  t_File
-    SET   status = NULL
+    SET   status = 2
     WHERE path = NEW.path
-    AND   status IS NOT NULL;
+    AND   status != 2;
 
   INSERT INTO t_FileContent (id, ix, data)
     SELECT  f.id,
@@ -179,18 +175,28 @@ BEGIN
 
 END;
 
+-- sp_reset
+--
+-- Called to clear the whole cache
+DROP VIEW IF EXISTS sp_reset;
+CREATE VIEW sp_reset(unused) AS
+  SELECT 0
+  WHERE 0;
+
+CREATE TRIGGER sp_reset_t
+  INSTEAD OF INSERT ON sp_reset
+BEGIN
+
+  DELETE FROM t_File;
+
+END;
+
+
 -------------------------------------
 -- Clean mid-transaction data
 
-DELETE FROM t_FileContent
-  WHERE id IN (
-    SELECT  id
-    FROM    t_File
-    WHERE   status IS NULL
-  );
-
 DELETE FROM t_File
-  WHERE status IS NULL;
+  WHERE status = 2;
 
 COMMIT;
 
