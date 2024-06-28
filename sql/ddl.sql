@@ -158,5 +158,5 @@ END;
 -------------------------------------
 
 COMMIT;
-
+PRAGMA wal_checkpoint(truncate);
 VACUUM;
