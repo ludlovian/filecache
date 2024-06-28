@@ -55,12 +55,13 @@ export default class FileCache {
     try {
       const stats = await stat(path)
       const details = {
+        path,
         status: FileCache.METADATA,
         mtime: +stats.mtime,
         size: stats.size
       }
 
-      this.#updateFile({ path, ...details })
+      this.#updateFile(details)
       return details
     } catch (err) {
       // defensive check
