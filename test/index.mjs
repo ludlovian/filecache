@@ -80,6 +80,48 @@ suite('filecache', { concurrency: false }, () => {
     cache.clear(file)
   })
 
+  test('read a file by iterator', async () => {
+    const file = join(base, 'file1')
+    const exp = readFileSync(file)
+    let act = Buffer.alloc(0)
+    for await (const chunk of cache.readFileIterator(file)) {
+      act = Buffer.concat([act, chunk])
+    }
+    assert.ok(Buffer.compare(act, exp) === 0)
+
+    // now do it again
+    act = Buffer.alloc(0)
+    for await (const chunk of cache.readFileIterator(file)) {
+      act = Buffer.concat([act, chunk])
+    }
+    assert.ok(Buffer.compare(act, exp) === 0)
+    cache.reset()
+  })
+
+  test('two parallel iterators', async () => {
+    const file = join(base, 'file2')
+    const it1 = cache.readFileIterator(file)
+    const it2 = cache.readFileIterator(file)
+    let res1
+    let res2
+
+    res1 = await it1.next()
+    res2 = await it2.next()
+
+    assert.ok(Buffer.compare(res1.value, res2.value) === 0)
+
+    res2 = await it2.next()
+    res1 = await it1.next()
+
+    assert.ok(Buffer.compare(res1.value, res2.value) === 0)
+
+    res1 = await it1.next()
+    res2 = await it2.next()
+
+    assert.ok(res1.done)
+    assert.ok(res2.done)
+  })
+
   test('read a file by readable stream', (t, done) => {
     const file = join(base, 'file1')
     const rs = cache.readFileStream(file)

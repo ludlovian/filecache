@@ -16,6 +16,7 @@ export default class FileCache {
   #db
   #findFile
   #readFile
+  #readFileParts
   #addFilePart
   #updateFile
   #removeFile
@@ -26,11 +27,18 @@ export default class FileCache {
     this.#prepareDB()
   }
 
+  // ------------------------------------------------
+  // Set up
+
   #prepareDB () {
     const db = this.#db
     db.exec(ddl)
     this.#findFile = query(db, 'vw_File', 'path')
     this.#readFile = query(db, 'vw_FileContent', 'path', {
+      pluck: true,
+      all: true
+    })
+    this.#readFileParts = query(db, 'vw_FileContent', 'path', {
       pluck: true,
       iterate: true
     })
@@ -40,75 +48,65 @@ export default class FileCache {
     this.#reset = storedProc(db, 'sp_reset', true)
   }
 
-  // Finds a file and returns the metadata for it, or undefined
-  // if the file does not exist.
-  //
-  // Caches the metadata if not already stored.
-  async findFile (path) {
-    path = resolve(path)
+  // ------------------------------------------------
+  // Internal cache functions
 
-    const details = this.#findFile({ path })
-    if (details) {
-      return details.status === FileCache.NOTEXIST ? undefined : details
+  #getCachedMetadata (path) {
+    return this.#findFile({ path })
+  }
+
+  #writeCacheMetadata ({ path, status, mtime = null, size = null }) {
+    this.#updateFile({ path, status, mtime, size })
+  }
+
+  #getCachedFile (path) {
+    return Buffer.concat(this.#readFile({ path }))
+  }
+
+  * #getCachedFileIterator (path) {
+    for (const chunk of this.#readFileParts({ path })) {
+      yield chunk
     }
+  }
 
+  // ------------------------------------------------
+  // Internal helpers
+  //
+  //
+  async #getFileMetadata (path) {
     try {
-      const stats = await stat(path)
-      const details = {
-        path,
-        status: FileCache.METADATA,
-        mtime: +stats.mtime,
-        size: stats.size
-      }
-
-      this.#updateFile(details)
-      return details
+      const { size, mtimeMs: mtime } = await stat(path)
+      const status = FileCache.METADATA
+      const md = { path, size, mtime, status }
+      this.#writeCacheMetadata(md)
+      return md
     } catch (err) {
       // defensive check
       /* c8 ignore start */
       if (err.code !== 'ENOENT') throw err
       /* c8 ignore end */
-
-      this.#updateFile({
-        path,
-        status: FileCache.NOTEXIST,
-        mtime: null,
-        size: null
-      })
-      return undefined
+      const status = FileCache.NOTEXIST
+      const md = { path, status }
+      this.#writeCacheMetadata(md)
+      return md
     }
   }
 
-  async * #readFileParts (path) {
-    path = resolve(path)
-    let details = this.#findFile({ path })
-    if (!details) {
-      details = await this.findFile(path)
-    }
-
-    if (!details || details.status === FileCache.NOTEXIST) {
-      // we already know it doesn't exist, so throw an ENOENT
+  async * #readAndCacheFileIterator (path, md) {
+    if (!md) md = await this.#getFileMetadata(path)
+    if (md.status === FileCache.NOTEXIST) {
       const err = new Error('ENOENT')
       err.code = 'ENOENT'
+      err.path = path
       throw err
     }
 
-    if (details.status === FileCache.CACHED) {
-      for (const data of this.#readFile({ path })) {
-        yield data
-      }
-      return
-    }
-
-    // we need to read it from the file system.
-    // If nobody else is, we should also cache it
-    const shouldCache = details.status === FileCache.METADATA
+    const shouldCache = md.status === FileCache.METADATA
     if (shouldCache) {
-      details.status = FileCache.UPDATING
-      this.#updateFile({ path, ...details })
+      md.status = FileCache.UPDATING
+      this.#writeCacheMetadata(md)
     }
 
-    // Allocate a buffer and start reading chunks into it
     const buff = Buffer.alloc(BUFFERSIZE)
     const fh = await open(path, 'r')
 
@@ -126,24 +124,69 @@ export default class FileCache {
       }
 
       if (shouldCache) {
-        details.status = FileCache.CACHED
-        this.#updateFile({ path, ...details })
+        md.status = FileCache.CACHED
+        this.#writeCacheMetadata(md)
       }
     } finally {
       fh.close()
     }
   }
 
-  async readFile (path) {
-    let buffer = Buffer.alloc(0)
-    for await (const chunk of this.#readFileParts(path)) {
-      buffer = Buffer.concat([buffer, chunk])
-    }
-    return buffer
+  // ------------------------------------------------
+  // External API
+  //
+  // async findFile (path) => metadata / undefined
+  //
+  // Finds a file and returns the metadata for it, or undefined
+  // if the file does not exist.
+  //
+  // Caches the metadata if not already stored.
+  async findFile (path) {
+    path = resolve(path)
+
+    let md = this.#getCachedMetadata(path)
+    if (!md) md = await this.#getFileMetadata(path)
+    return md.status === FileCache.NOTEXIST ? undefined : md
   }
 
+  // async readFile (path) => Buffer
+  //
+  // Returns a promise of the buffer of this file
+  //
+  async readFile (path) {
+    path = resolve(path)
+    const md = this.#getCachedMetadata(path)
+    if (md?.status === FileCache.CACHED) {
+      return this.#getCachedFile(path)
+    }
+
+    let buff = Buffer.alloc(0)
+    for await (const part of this.#readAndCacheFileIterator(path, md)) {
+      buff = Buffer.concat([buff, part])
+    }
+    return buff
+  }
+
+  // async * readFileIterator (path) => AsyncIterator
+  //
+  // Returns an async iterator over a file
+  //
+  async * readFileIterator (path) {
+    path = resolve(path)
+    const md = this.#getCachedMetadata(path)
+    if (md?.status === FileCache.CACHED) {
+      yield * this.#getCachedFileIterator(path)
+      return
+    }
+
+    yield * this.#readAndCacheFileIterator(path, md)
+  }
+
+  // readFileStream => Readable
+  //
+  // returns a readable stream
   readFileStream (path) {
-    return Readable.from(this.#readFileParts(path))
+    return Readable.from(this.readFileIterator(path))
   }
 
   clear (path) {
@@ -167,19 +210,20 @@ export default class FileCache {
       this.#db.pragma('wal_checkpoint(TRUNCATE);')
     } else if (file) {
       const stats = await stat(file)
-      const details = this.#findFile({ path: file })
+      const md = this.#getCachedMetadata(file)
+
       // skip this fetch if we have a valid record that matches
       if (
-        details &&
-        details.status === FileCache.CACHED &&
-        details.mtime === +stats.mtime &&
-        details.size === stats.size
+        md &&
+        md.status === FileCache.CACHED &&
+        md.mtime === +stats.mtime &&
+        md.size === stats.size
       ) {
         return
       }
       this.#removeFile({ path: file })
-      for await (const chunk of this.#readFileParts(file)) {
-        NOOP(chunk)
+      for await (const part of this.#readAndCacheFileIterator(file)) {
+        NOOP(part)
       }
     }
   }
