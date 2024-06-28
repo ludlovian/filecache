@@ -52,15 +52,19 @@ CREATE TABLE IF NOT EXISTS
 
 -- vw_File
 --
--- To check if a file exists with the right etag
+-- to receive metadata about each file
 
 DROP VIEW IF EXISTS vw_File;
-CREATE VIEW vw_File AS
-    SELECT  path,
-            status,
-            mtime,
-            size
-    FROM    t_File;
+CREATE VIEW vw_File(path, status, mtime, size, parts) AS
+    SELECT      f.path,
+                f.status,
+                f.mtime,
+                f.size,
+                count(c.data)
+    FROM        t_File f
+    LEFT JOIN   t_FileContent c
+                ON c.id = f.id
+    GROUP BY    f.path;
 
 
 -- vw_FileContent

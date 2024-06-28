@@ -33,7 +33,12 @@ export function query (db, name, parms = '', opts = {}) {
   if (all) {
     return parms => stmt.all(parms)
   } else if (iterate) {
-    return parms => stmt.iterate(parms)
+    // when we iterate, we must create a statement for each one
+    return parms => {
+      let stmt = db.prepare(sql)
+      if (pluck) stmt = stmt.pluck()
+      return stmt.iterate(parms)
+    }
   } else {
     return parms => stmt.get(parms)
   }
