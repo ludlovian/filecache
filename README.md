@@ -9,6 +9,12 @@ The default export. A class representing a cache of files
 
 Creates a new filecache
 
+### .findFile(path) => Promise<stats>
+
+Returns an object with `{ mtime, size, ctype, status }` for the file
+Returns undefined if not found.
+Caches the result.
+
 ### .readFile(path) => Promise<Buffer>
 
 Reads the file, ideally from the cache if we have it. If not, the file is cached for future reads.
@@ -19,7 +25,7 @@ The contents are returned as a Buffer
 
 Returns a readable stream of the file, ideally from the cache.
 
-### .preFetch(opts) => Promise
+### .prefetch(opts) => Promise
 
 Pre-fetches files if not already cached (and size/mtime unchanged). The options are:
 - `file` - prefetch this file
