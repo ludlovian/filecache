@@ -1,23 +1,17 @@
-import { open, stat, readdir } from 'node:fs/promises'
-import { resolve, join } from 'node:path'
-import { Readable } from 'node:stream'
+import { readFile, stat } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import SQLite from 'better-sqlite3'
-import { ddl, storedProc, query } from './db.mjs'
-
-const BUFFERSIZE = 64 * 1024
-const NOOP = () => undefined
+import { ddl, storedProc } from './db.mjs'
 
 export default class FileCache {
-  static NOTEXIST = 0
-  static METADATA = 1
-  static UPDATING = 2
-  static CACHED = 3
+  static limit = 256 * 1024
 
   #db
-  #findFile
-  #readFile
-  #readFileParts
-  #addFilePart
+
+  #getFileMetadata
+  #getFile
+
+  #addFileContent
   #updateFile
   #removeFile
   #reset
@@ -33,198 +27,92 @@ export default class FileCache {
   #prepareDB () {
     const db = this.#db
     db.exec(ddl)
-    this.#findFile = query(db, 'vw_File', 'path')
-    this.#readFile = query(db, 'vw_FileContent', 'path', {
-      pluck: true,
-      all: true
-    })
-    this.#readFileParts = query(db, 'vw_FileContent', 'path', {
-      pluck: true,
-      iterate: true
-    })
-    this.#addFilePart = storedProc(db, 'sp_addFilePart')
+    // queries
+    const stmtGetFileMetadata = db.prepare('select * from vw_File where path=?')
+    this.#getFileMetadata = path => stmtGetFileMetadata.get(path)
+
+    const stmtGetFile = db.prepare('select * from vw_FileContent where path=?')
+    this.#getFile = path => stmtGetFile.pluck().get(path)
+
+    // stored procs
     this.#updateFile = storedProc(db, 'sp_updateFile')
     this.#removeFile = storedProc(db, 'sp_removeFile')
+    this.#addFileContent = storedProc(db, 'sp_addFileContent')
     this.#reset = storedProc(db, 'sp_reset', true)
-  }
-
-  // ------------------------------------------------
-  // Internal cache functions
-
-  #getCachedMetadata (path) {
-    return this.#findFile({ path })
-  }
-
-  #writeCacheMetadata ({ path, status, mtime = null, size = null }) {
-    this.#updateFile({ path, status, mtime, size })
-  }
-
-  #getCachedFile (path) {
-    return Buffer.concat(this.#readFile({ path }))
-  }
-
-  * #getCachedFileIterator (path) {
-    for (const chunk of this.#readFileParts({ path })) {
-      yield chunk
-    }
-  }
-
-  // ------------------------------------------------
-  // Internal helpers
-  //
-  //
-  async #getFileMetadata (path) {
-    try {
-      const { size, mtimeMs: mtime } = await stat(path)
-      const status = FileCache.METADATA
-      const md = { path, size, mtime, status }
-      this.#writeCacheMetadata(md)
-      return md
-    } catch (err) {
-      // defensive check
-      /* c8 ignore start */
-      if (err.code !== 'ENOENT') throw err
-      /* c8 ignore end */
-      const status = FileCache.NOTEXIST
-      const md = { path, status }
-      this.#writeCacheMetadata(md)
-      return md
-    }
-  }
-
-  async * #readAndCacheFileIterator (path, md) {
-    if (!md) md = await this.#getFileMetadata(path)
-    if (md.status === FileCache.NOTEXIST) {
-      const err = new Error('ENOENT')
-      err.code = 'ENOENT'
-      err.path = path
-      throw err
-    }
-
-    const shouldCache = md.status === FileCache.METADATA
-    if (shouldCache) {
-      md.status = FileCache.UPDATING
-      this.#writeCacheMetadata(md)
-    }
-
-    const buff = Buffer.alloc(BUFFERSIZE)
-    const fh = await open(path, 'r')
-
-    try {
-      while (true) {
-        const { bytesRead } = await fh.read(buff)
-        const data = buff.slice(0, bytesRead)
-        if (shouldCache) {
-          this.#addFilePart({ path, data })
-        }
-        yield data
-        if (bytesRead < buff.byteLength) {
-          break
-        }
-      }
-
-      if (shouldCache) {
-        md.status = FileCache.CACHED
-        this.#writeCacheMetadata(md)
-      }
-    } finally {
-      fh.close()
-    }
   }
 
   // ------------------------------------------------
   // External API
   //
-  // async findFile (path) => metadata / undefined
-  //
-  // Finds a file and returns the metadata for it, or undefined
-  // if the file does not exist.
+  // async findFile (path) => metadata
   //
   // Caches the metadata if not already stored.
+
   async findFile (path) {
     path = resolve(path)
 
-    let md = this.#getCachedMetadata(path)
-    if (!md) md = await this.#getFileMetadata(path)
-    return md.status === FileCache.NOTEXIST ? undefined : md
+    const md = this.#getFileMetadata(path)
+    return md ?? (await this.#fetchFileMetadata(path))
   }
 
-  // async readFile (path) => Buffer
+  // async readFile (path) => Buffer | null
   //
-  // Returns a promise of the buffer of this file
-  //
+  // If the file doesn't exist, we throw (you should have checked)
+  // If the file is too large, we return null
+  // If we have the file, or it is small enough, we
+  // return it, caching if required
+
   async readFile (path) {
     path = resolve(path)
-    const md = this.#getCachedMetadata(path)
-    if (md?.status === FileCache.CACHED) {
-      return this.#getCachedFile(path)
-    }
 
-    let buff = Buffer.alloc(0)
-    for await (const part of this.#readAndCacheFileIterator(path, md)) {
-      buff = Buffer.concat([buff, part])
-    }
-    return buff
+    let md = this.#getFileMetadata(path)
+    if (!md) md = await this.#fetchFileMetadata(path)
+    if (md.missing) throw MissingFile(path)
+
+    if (md.size > FileCache.limit) return null
+    if (md.cached) return this.#getFile(path)
+    const data = await readFile(path)
+    this.#addFileContent({ path, data })
+    return data
   }
 
-  // async * readFileIterator (path) => AsyncIterator
+  // clear
   //
-  // Returns an async iterator over a file
-  //
-  async * readFileIterator (path) {
-    path = resolve(path)
-    const md = this.#getCachedMetadata(path)
-    if (md?.status === FileCache.CACHED) {
-      yield * this.#getCachedFileIterator(path)
-      return
-    }
-
-    yield * this.#readAndCacheFileIterator(path, md)
-  }
-
-  // readFileStream => Readable
-  //
-  // returns a readable stream
-  readFileStream (path) {
-    return Readable.from(this.readFileIterator(path))
-  }
+  // Removes any cache entries for this path
 
   clear (path) {
     this.#removeFile({ path })
   }
 
+  // reset
+  //
+  // resets the database
+
   reset () {
     this.#reset()
   }
 
-  async prefetch ({ file, dir, filter }) {
-    if (dir) {
-      dir = resolve(dir)
-      const opts = { withFileTypes: true, recursive: true }
-      for (const dirent of await readdir(dir, opts)) {
-        if (!dirent.isFile()) continue
-        if (filter && !filter(dirent)) continue
-        const file = join(dirent.parentPath, dirent.name)
-        await this.prefetch({ file })
-      }
-      this.#db.pragma('wal_checkpoint(TRUNCATE);')
-    } else if (file) {
-      const stats = await stat(file)
-      const md = this.#getCachedMetadata(file)
+  // ------------------------------------------------
+  // Internal functions
 
-      // skip this fetch if we have a valid record that matches
-      if (
-        md &&
-        md.status === FileCache.CACHED &&
-        md.mtime === +stats.mtime &&
-        md.size === stats.size
-      ) {
-        return
-      }
-      this.#removeFile({ path: file })
-      for await (const part of this.#readAndCacheFileIterator(file)) {
-        NOOP(part)
-      }
+  async #fetchFileMetadata (path) {
+    try {
+      const { size, mtimeMs: mtime } = await stat(path)
+      this.#updateFile({ path, size, mtime })
+      return { path, size, mtime }
+    } catch (err) {
+      // defensive
+      /* c8 ignore next */
+      if (err.code !== 'ENOENT') throw err
+      this.#updateFile({ path, size: null, mtime: null })
+      return { path, missing: true }
     }
   }
+}
+
+function MissingFile (path) {
+  const err = new Error(`ENOENT: File missing: ${path}`)
+  err.code = 'ENOENT'
+  err.path = path
+  return err
 }

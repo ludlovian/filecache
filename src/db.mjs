@@ -19,32 +19,6 @@ export function storedProc (db, name, noparms = false) {
   }
 }
 
-export function query (db, name, parms = '', opts = {}) {
-  const { pluck, all, iterate } = opts
-  parms = parms.split(':').filter(Boolean)
-  let sql = `select * from ${name}`
-  if (parms.length) {
-    sql += ' where '
-    sql += parms.map(x => `${x}=:${x}`).join(' and ')
-  }
-  let stmt = db.prepare(sql)
-  if (pluck) stmt = stmt.pluck()
-  /* c8 ignore start */
-  if (all) {
-    return parms => stmt.all(parms)
-  } else if (iterate) {
-    // when we iterate, we must create a statement for each one
-    return parms => {
-      let stmt = db.prepare(sql)
-      if (pluck) stmt = stmt.pluck()
-      return stmt.iterate(parms)
-    }
-  } else {
-    return parms => stmt.get(parms)
-  }
-  /* c8 ignore end */
-}
-
 function getCols (db, name) {
   const sql = `select * from ${name}`
   return db

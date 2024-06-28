@@ -2,10 +2,14 @@ const { readdirSync, readFileSync, writeFileSync } = require('node:fs')
 const { join, basename } = require('node:path')
 
 const ddlFile = join(__dirname, 'ddl.sql')
-const outFile = join(__dirname, '../src/ddl.mjs')
+const outJSFile = join(__dirname, '../src/ddl.mjs')
+const outSQLFile = join(__dirname, 'ddl.min.sql')
+
 const sql = cleanSQL(readFileSync(ddlFile, 'utf8'))
-const data = `export const ddl =\n  '${sql}'\n`
-writeFileSync(outFile, data)
+const jsFile = `export const ddl =\n  '${sql}'\n`
+
+writeFileSync(outJSFile, jsFile)
+writeFileSync(outSQLFile, sql)
 
 function cleanSQL(sql) {
   return sql

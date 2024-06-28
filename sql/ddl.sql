@@ -8,41 +8,31 @@ PRAGMA foreign_keys=ON;
 BEGIN TRANSACTION;
 
 -------------------------------------
--- tFile
+-- t_File
 --
 -- Holds a record for eacached file
 -- with the path and metadata
 
--- Also holds a flag for status, with the following meaning
---   - 0 NOTEXIST   - the file does not exist
---   - 1 METADATA   - we have metadata but no contents
---                    if we read, we should add the contents
---   - 2 UPDATING   - we have metadata, and somebody is already
---                    updating the contents (we hope)
---   - 3 CACHED     - we have the contents
 
 
 CREATE TABLE IF NOT EXISTS
   t_File (
-    id      INTEGER PRIMARY KEY,
+    id      INTEGER PRIMARY KEY NOT NULL,
     path    TEXT NOT NULL UNIQUE,
-    status  INT NOT NULL,
     mtime   INT,
     size    INT
   );
 
 -------------------------------------
--- tFilePart
+-- t_FileContent
 --
--- Holds the parts of the file to be assembled in
+-- Holds the contents of the file 
 -- order to get the contents
 
 CREATE TABLE IF NOT EXISTS
   t_FileContent (
-    id      INTEGER NOT NULL,
-    ix      INTEGER NOT NULL,
+    id      INTEGER PRIMARY KEY NOT NULL,
     data    BLOB NOT NULL,
-    PRIMARY KEY (id, ix),
     FOREIGN KEY (id) REFERENCES t_File(id) ON DELETE CASCADE
   );
 
@@ -55,12 +45,12 @@ CREATE TABLE IF NOT EXISTS
 -- to receive metadata about each file
 
 DROP VIEW IF EXISTS vw_File;
-CREATE VIEW vw_File(path, status, mtime, size, parts) AS
+CREATE VIEW vw_File(path, mtime, size, missing, cached) AS
     SELECT      f.path,
-                f.status,
                 f.mtime,
                 f.size,
-                count(c.data)
+                f.size IS NULL,
+                COUNT(c.id) > 0
     FROM        t_File f
     LEFT JOIN   t_FileContent c
                 ON c.id = f.id
@@ -72,16 +62,12 @@ CREATE VIEW vw_File(path, status, mtime, size, parts) AS
 -- To read the content of a file
 
 DROP VIEW IF EXISTS vw_FileContent;
-CREATE VIEW vw_FileContent (data, path, ix) AS
+CREATE VIEW vw_FileContent (data, path) AS
     SELECT  c.data,
-            f.path,
-            c.ix
+            f.path
     FROM    t_File f
     JOIN    t_FileContent c
-      ON    f.id = c.id
-    ORDER BY
-            f.path,
-            c.ix;
+      ON    f.id = c.id;
 
 -------------------------------------
 -- Stored procedures
@@ -105,42 +91,29 @@ BEGIN
 END;
 
 
--- sp_addFilePart
+-- sp_addFileContent
 --
--- Called continually to add sequential parts of
--- a-file to the database.
+-- Adds the record to t_File if needed
 
--- Adds the record to t_File if needed and
--- sets the etag to updating
-
--- Sets the index to the next number
-
-DROP VIEW IF EXISTS sp_addFilePart;
-CREATE VIEW sp_addFilePart(path, data) AS
+DROP VIEW IF EXISTS sp_addFileContent;
+CREATE VIEW sp_addFileContent(path, data) AS
   SELECT 0, 0
   WHERE 0;
 
-CREATE TRIGGER sp_addFilePart_t
-  INSTEAD OF INSERT ON sp_addFilePart
+CREATE TRIGGER sp_addFileContent_t
+  INSTEAD OF INSERT ON sp_addFileContent
 BEGIN
   INSERT OR IGNORE
     INTO  t_File (path)
     VALUES (NEW.path);
 
-  -- Set the file status to UPDATING
-  UPDATE  t_File
-    SET   status = 2
-    WHERE path = NEW.path
-    AND   status != 2;
-
-  INSERT INTO t_FileContent (id, ix, data)
-    SELECT  f.id,
-            1 + IFNULL(MAX(c.ix), 0),
-            NEW.data
-    FROM    t_file f
-    LEFT JOIN t_FileContent c
-        ON c.id = f.id
-    WHERE   f.path = NEW.path;
+  INSERT INTO t_FileContent (id, data)
+      SELECT  f.id,
+              NEW.data
+      FROM    t_file f
+      WHERE   f.path = NEW.path
+    ON CONFLICT (id) DO UPDATE
+      SET     data = NEW.data;
 
 END;
 
@@ -149,29 +122,20 @@ END;
 -- Called to set the metadata, including existence status
 
 DROP VIEW IF EXISTS sp_updateFile;
-CREATE VIEW sp_updateFile(path, status, mtime, size) AS
-  SELECT 0, 0, 0, 0
+CREATE VIEW sp_updateFile(path, mtime, size) AS
+  SELECT 0, 0, 0
   WHERE 0;
 
 CREATE TRIGGER sp_updateFile_t
   INSTEAD OF INSERT ON sp_updateFile
 BEGIN
 
-  INSERT INTO t_File (
-        path,
-        status,
-        mtime,
-        size
-    )
-    VALUES (
-        NEW.path,
-        NEW.status,
-        NEW.mtime,
-        NEW.size
-    )
-  ON CONFLICT (path) DO UPDATE
-    SET (status, mtime, size) =
-          (NEW.status, NEW.mtime, NEW.size);
+  INSERT INTO t_File
+      (path, mtime, size)
+    VALUES
+      (NEW.path, NEW.mtime, NEW.size)
+    ON CONFLICT (path) DO UPDATE
+      SET (mtime, size) = (NEW.mtime, NEW.size);
 
 END;
 
@@ -191,12 +155,7 @@ BEGIN
 
 END;
 
-
 -------------------------------------
--- Clean mid-transaction data
-
-DELETE FROM t_File
-  WHERE status = 2;
 
 COMMIT;
 
