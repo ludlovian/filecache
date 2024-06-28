@@ -2,7 +2,6 @@ import { open, stat, readdir } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 import { Readable } from 'node:stream'
 import SQLite from 'better-sqlite3'
-import { lookup } from 'mrmime'
 import { ddl, storedProc, query } from './db.mjs'
 
 const BUFFERSIZE = 64 * 1024
@@ -58,8 +57,7 @@ export default class FileCache {
       const details = {
         status: FileCache.METADATA,
         mtime: +stats.mtime,
-        size: stats.size,
-        ctype: lookup(path)
+        size: stats.size
       }
 
       this.#updateFile({ path, ...details })
@@ -74,8 +72,7 @@ export default class FileCache {
         path,
         status: FileCache.NOTEXIST,
         mtime: null,
-        size: null,
-        ctype: null
+        size: null
       })
       return undefined
     }

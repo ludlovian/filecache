@@ -28,8 +28,7 @@ CREATE TABLE IF NOT EXISTS
     path    TEXT NOT NULL UNIQUE,
     status  INT NOT NULL,
     mtime   INT,
-    size    INT,
-    ctype   TEXT
+    size    INT
   );
 
 -------------------------------------
@@ -60,8 +59,7 @@ CREATE VIEW vw_File AS
     SELECT  path,
             status,
             mtime,
-            size,
-            ctype
+            size
     FROM    t_File;
 
 
@@ -147,8 +145,8 @@ END;
 -- Called to set the metadata, including existence status
 
 DROP VIEW IF EXISTS sp_updateFile;
-CREATE VIEW sp_updateFile(path, status, mtime, size, ctype) AS
-  SELECT 0, 0, 0, 0, 0
+CREATE VIEW sp_updateFile(path, status, mtime, size) AS
+  SELECT 0, 0, 0, 0
   WHERE 0;
 
 CREATE TRIGGER sp_updateFile_t
@@ -159,19 +157,17 @@ BEGIN
         path,
         status,
         mtime,
-        size,
-        ctype
+        size
     )
     VALUES (
         NEW.path,
         NEW.status,
         NEW.mtime,
-        NEW.size,
-        NEW.ctype
+        NEW.size
     )
   ON CONFLICT (path) DO UPDATE
-    SET (status, mtime, size, ctype) =
-          (NEW.status, NEW.mtime, NEW.size, NEW.ctype);
+    SET (status, mtime, size) =
+          (NEW.status, NEW.mtime, NEW.size);
 
 END;
 
