@@ -1,1 +1,1 @@
-SELECT etag FROM vw_File WHERE path = :path;
+SELECT status, mtime, size, ctype FROM vw_File WHERE path = :path;

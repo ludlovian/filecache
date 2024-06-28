@@ -11,23 +11,23 @@ BEGIN TRANSACTION;
 -- tFile
 --
 -- Holds a record for eacached file
--- with the path and etag,
+-- with the path and metadata
 
--- The etag is usually a size-mtime weak match
--- but has two other meanings
---
---  - NULL is used to show that the file does not
---    exist and saves a FS lookup
---  - 'updating' is used to show that some other
---    thread is currently writing this resource
---    to the cache, but is not yet ready to be used
+-- Also holds a flag for status, with the following meaning
+-- - truthy - the file exists and can be used
+-- - falsey - this is a record saying the file does not exist
+-- - NULL   - the file probably exists, but is being updated so do not
+--            used the contents
 
 
 CREATE TABLE IF NOT EXISTS
   t_File (
     id      INTEGER PRIMARY KEY,
     path    TEXT NOT NULL UNIQUE,
-    etag    TEXT
+    status  INT,
+    mtime   INT,
+    size    INT,
+    ctype   TEXT
   );
 
 -------------------------------------
@@ -54,9 +54,12 @@ CREATE TABLE IF NOT EXISTS
 -- To check if a file exists with the right etag
 
 DROP VIEW IF EXISTS vw_File;
-CREATE VIEW vw_File (path, etag) AS
+CREATE VIEW vw_File AS
     SELECT  path,
-            etag
+            status,
+            mtime,
+            size,
+            ctype
     FROM    t_File;
 
 
@@ -128,9 +131,9 @@ BEGIN
     VALUES (NEW.path);
 
   UPDATE  t_File
-    SET   etag = 'updating'
+    SET   status = NULL
     WHERE path = NEW.path
-    AND   etag IS NOT 'updating';
+    AND   status IS NOT NULL;
 
   INSERT INTO t_FileContent (id, ix, data)
     SELECT  f.id,
@@ -145,22 +148,34 @@ END;
 
 -- sp_updateFile
 --
--- Called at the end of inserts to set the etag, or called
--- to set the etag to null if the file doesn't exist
+-- Called to set the metadata, including existence status
 
 DROP VIEW IF EXISTS sp_updateFile;
-CREATE VIEW sp_updateFile(path, etag) AS
-  SELECT 0, 0
+CREATE VIEW sp_updateFile(path, status, mtime, size, ctype) AS
+  SELECT 0, 0, 0, 0, 0
   WHERE 0;
 
 CREATE TRIGGER sp_updateFile_t
   INSTEAD OF INSERT ON sp_updateFile
 BEGIN
 
-  INSERT INTO t_File (path, etag)
-    VALUES (NEW.path, NEW.etag)
+  INSERT INTO t_File (
+        path,
+        status,
+        mtime,
+        size,
+        ctype
+    )
+    VALUES (
+        NEW.path,
+        NEW.status,
+        NEW.mtime,
+        NEW.size,
+        NEW.ctype
+    )
   ON CONFLICT (path) DO UPDATE
-    SET etag = NEW.etag;
+    SET (status, mtime, size, ctype) =
+          (NEW.status, NEW.mtime, NEW.size, NEW.ctype);
 
 END;
 
@@ -171,10 +186,12 @@ DELETE FROM t_FileContent
   WHERE id IN (
     SELECT  id
     FROM    t_File
-    WHERE   etag = 'updating'
+    WHERE   status IS NULL
   );
 
 DELETE FROM t_File
-  WHERE etag = 'updating';
+  WHERE status IS NULL;
 
 COMMIT;
+
+VACUUM;

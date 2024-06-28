@@ -28,5 +28,8 @@
   },
   "peerDependencies": {
     "better-sqlite3": "^11.0.0"
+  },
+  "dependencies": {
+    "mrmime": "^2.0.0"
   }
 }

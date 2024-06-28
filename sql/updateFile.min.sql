@@ -1,1 +1,1 @@
-INSERT INTO sp_updateFile (path, etag) VALUES (:path, :etag);
+INSERT INTO sp_updateFile ( path, status, mtime, size, ctype ) VALUES ( :path, :status, :mtime, :size, :ctype );

@@ -1,7 +1,19 @@
 -------------------------------------
 -- updateFile
 --
--- Updates a file with a new (or null) etag
+-- Updates or inserts a file with metadata
 
-INSERT INTO sp_updateFile (path, etag)
-    VALUES (:path, :etag);
+INSERT INTO sp_updateFile (
+        path,
+        status,
+        mtime,
+        size,
+        ctype
+    )
+    VALUES (
+        :path,
+        :status,
+        :mtime,
+        :size,
+        :ctype
+    );

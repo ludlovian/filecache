@@ -2,6 +2,7 @@ import { open, stat, readdir } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 import { Readable } from 'node:stream'
 import SQLite from 'better-sqlite3'
+import { lookup } from 'mrmime'
 import {
   ddl,
   findFile,
@@ -12,7 +13,6 @@ import {
   reset
 } from './sql.mjs'
 
-const UPDATING = 'updating'
 const BUFFERSIZE = 64 * 1024
 const NOOP = () => undefined
 
@@ -26,7 +26,7 @@ export default class FileCache {
   constructor (dbFile) {
     this.#db = SQLite(dbFile)
     this.#db.exec(ddl)
-    this.#findFile = this.#db.prepare(findFile).pluck()
+    this.#findFile = this.#db.prepare(findFile)
     this.#readFile = this.#db.prepare(readFile).pluck()
     this.#addFilePart = this.#db.prepare(addFilePart)
     this.#updateFile = this.#db.prepare(updateFile)
@@ -35,15 +35,15 @@ export default class FileCache {
 
   async * #readFileParts (path) {
     path = resolve(path)
-    const etag = this.#findFile.get({ path })
-    if (etag === null) {
+    let details = this.#findFile.get({ path })
+    if (details?.status === 0) {
       // we already know it doesn't exist, so throw an ENOENT
       const err = new Error('ENOENT')
       err.code = 'ENOENT'
       throw err
     }
 
-    if (etag !== undefined && etag !== UPDATING) {
+    if (details?.status === 1) {
       // we have it so serve from the cache
       for (const data of this.#readFile.iterate({ path })) {
         yield data
@@ -51,16 +51,27 @@ export default class FileCache {
       return
     }
 
-    const shouldCache = etag !== UPDATING
+    const shouldCache = !details
     // we don't have it so we must read it from the file system
-    let newEtag
     if (shouldCache) {
       try {
         const stats = await stat(path)
-        newEtag = `W/"${stats.size}-${+stats.mtime}"`
+        details = {
+          status: null, // updating
+          mtime: +stats.mtime,
+          size: stats.size,
+          ctype: lookup(path) ?? null
+        }
+        this.#updateFile.run({ path, ...details })
       } catch (err) {
         if (err.code === 'ENOENT') {
-          this.#updateFile.run({ path, etag: null })
+          this.#updateFile.run({
+            path,
+            status: 0,
+            mtime: null,
+            size: null,
+            ctype: null
+          })
         }
         throw err
       }
@@ -84,7 +95,8 @@ export default class FileCache {
       }
 
       if (shouldCache) {
-        this.#updateFile.run({ path, etag: newEtag })
+        details.status = 1
+        this.#updateFile.run({ path, ...details })
       }
     } finally {
       fh.close()
@@ -124,9 +136,16 @@ export default class FileCache {
       this.#db.pragma('wal_checkpoint(TRUNCATE);')
     } else if (file) {
       const stats = await stat(file)
-      const etag = `W/"${stats.size}-${+stats.mtime}"`
-      const dbEtag = this.#findFile.get({ path: file })
-      if (etag === dbEtag) return
+      const details = this.#findFile.get({ path: file })
+      // skip this fetch if we have a valid record that matches
+      if (
+        details &&
+        details.status === 1 &&
+        details.mtime === +stats.mtime &&
+        details.size === stats.size
+      ) {
+        return
+      }
       this.#removeFile.run({ path: file })
       for await (const chunk of this.#readFileParts(file)) {
         NOOP(chunk)
