@@ -1,6 +1,6 @@
 {
   "name": "@ludlovian/filecache",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Cache of files",
   "main": "src/index.mjs",
   "exports": {
