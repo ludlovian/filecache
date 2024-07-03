@@ -1,3 +1,4 @@
+import process from 'node:process'
 import { readFile, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import SQLite from 'better-sqlite3'
@@ -19,6 +20,7 @@ export default class FileCache {
   constructor (dbFile) {
     this.#db = SQLite(dbFile)
     this.#prepareDB()
+    process.on('exit', () => this.#close())
   }
 
   // ------------------------------------------------
@@ -26,7 +28,14 @@ export default class FileCache {
 
   #prepareDB () {
     const db = this.#db
+    // Set up the database and check the schema
     db.exec(ddl)
+    const isValid = db.prepare('select valid from vw_Schema').pluck().get()
+    if (!isValid) {
+      this.#close()
+      throw new Error('Database schema invalid: ' + dbFile)
+    }
+
     // queries
     const stmtGetFileMetadata = db.prepare('select * from vw_File where path=?')
     this.#getFileMetadata = path => stmtGetFileMetadata.get(path)
@@ -39,6 +48,11 @@ export default class FileCache {
     this.#removeFile = storedProc(db, 'sp_removeFile')
     this.#addFileContent = storedProc(db, 'sp_addFileContent')
     this.#reset = storedProc(db, 'sp_reset', true)
+  }
+
+  #close () {
+    if (this.#db) this.#db.close()
+    this.#db = undefined
   }
 
   // ------------------------------------------------
@@ -90,6 +104,10 @@ export default class FileCache {
 
   reset () {
     this.#reset()
+  }
+
+  close () {
+    this.#close()
   }
 
   // ------------------------------------------------

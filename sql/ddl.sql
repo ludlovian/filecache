@@ -8,6 +8,25 @@ PRAGMA foreign_keys=ON;
 BEGIN TRANSACTION;
 
 -------------------------------------
+-- t_Version
+--
+-- Holds the schema number
+--
+-- UPDATE BOTH LINES WHEN SCHEMA CHANGES
+--
+CREATE TABLE IF NOT EXISTS
+  t_Schema (version INTEGER NOT NULL);
+
+INSERT INTO t_Schema
+  SELECT 1
+  WHERE NOT EXISTS (SELECT * FROM t_Schema);
+
+CREATE VIEW IF NOT EXISTS
+  vw_Schema(valid) AS
+    SELECT  version = 1
+      FROM  t_Schema;
+
+-------------------------------------
 -- t_File
 --
 -- Holds a record for eacached file
@@ -44,8 +63,8 @@ CREATE TABLE IF NOT EXISTS
 --
 -- to receive metadata about each file
 
-DROP VIEW IF EXISTS vw_File;
-CREATE VIEW vw_File(path, mtime, size, missing, cached) AS
+CREATE VIEW IF NOT EXISTS
+  vw_File(path, mtime, size, missing, cached) AS
     SELECT      f.path,
                 f.mtime,
                 f.size,
@@ -61,8 +80,8 @@ CREATE VIEW vw_File(path, mtime, size, missing, cached) AS
 --
 -- To read the content of a file
 
-DROP VIEW IF EXISTS vw_FileContent;
-CREATE VIEW vw_FileContent (data, path) AS
+CREATE VIEW IF NOT EXISTS
+  vw_FileContent (data, path) AS
     SELECT  c.data,
             f.path
     FROM    t_File f
@@ -77,12 +96,12 @@ CREATE VIEW vw_FileContent (data, path) AS
 --
 -- Removes an old or outdated cached file
 
-DROP VIEW IF EXISTS sp_removeFile;
-CREATE VIEW sp_removeFile(path) AS
-  SELECT 0
-  WHERE 0;
+CREATE VIEW IF NOT EXISTS
+  sp_removeFile(path) AS
+    SELECT 0
+    WHERE 0;
 
-CREATE TRIGGER sp_removeFile_t
+CREATE TRIGGER IF NOT EXISTS sp_removeFile_t
   INSTEAD OF INSERT ON sp_removeFile
 BEGIN
   DELETE FROM t_File
@@ -95,12 +114,12 @@ END;
 --
 -- Adds the record to t_File if needed
 
-DROP VIEW IF EXISTS sp_addFileContent;
-CREATE VIEW sp_addFileContent(path, data) AS
-  SELECT 0, 0
-  WHERE 0;
+CREATE VIEW IF NOT EXISTS
+  sp_addFileContent(path, data) AS
+    SELECT 0, 0
+    WHERE 0;
 
-CREATE TRIGGER sp_addFileContent_t
+CREATE TRIGGER IF NOT EXISTS sp_addFileContent_t
   INSTEAD OF INSERT ON sp_addFileContent
 BEGIN
   INSERT OR IGNORE
@@ -121,12 +140,12 @@ END;
 --
 -- Called to set the metadata, including existence status
 
-DROP VIEW IF EXISTS sp_updateFile;
-CREATE VIEW sp_updateFile(path, mtime, size) AS
-  SELECT 0, 0, 0
-  WHERE 0;
+CREATE VIEW IF NOT EXISTS
+  sp_updateFile(path, mtime, size) AS
+    SELECT 0, 0, 0
+    WHERE 0;
 
-CREATE TRIGGER sp_updateFile_t
+CREATE TRIGGER IF NOT EXISTS sp_updateFile_t
   INSTEAD OF INSERT ON sp_updateFile
 BEGIN
 
@@ -142,12 +161,12 @@ END;
 -- sp_reset
 --
 -- Called to clear the whole cache
-DROP VIEW IF EXISTS sp_reset;
-CREATE VIEW sp_reset(unused) AS
-  SELECT 0
-  WHERE 0;
+CREATE VIEW IF NOT EXISTS
+  sp_reset(unused) AS
+    SELECT 0
+    WHERE 0;
 
-CREATE TRIGGER sp_reset_t
+CREATE TRIGGER IF NOT EXISTS sp_reset_t
   INSTEAD OF INSERT ON sp_reset
 BEGIN
 
@@ -160,3 +179,5 @@ END;
 COMMIT;
 PRAGMA wal_checkpoint(truncate);
 VACUUM;
+
+-- vim: ts=2:sts=2:sw=2:et

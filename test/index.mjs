@@ -1,8 +1,8 @@
 import { suite, test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-
 import { existsSync, unlinkSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import SQLite from 'better-sqlite3'
 
 import FileCache from '../src/index.mjs'
 
@@ -15,7 +15,10 @@ suite('filecache', { concurrency: false }, () => {
     if (existsSync(dbFile)) unlinkSync(dbFile)
   })
   after(() => {
-    if (cache) cache.reset()
+    if (cache) {
+      cache.reset()
+      cache.close()
+    }
     cache = null
     if (existsSync(dbFile)) unlinkSync(dbFile)
   })
@@ -105,5 +108,20 @@ suite('filecache', { concurrency: false }, () => {
     assert.strictEqual(act, null)
 
     cache.reset()
+  })
+
+  test('Make file with wrong version', () => {
+    // clear old db
+    cache.reset()
+    cache.close()
+    cache = null
+
+    // write wrong version
+    const db = new SQLite(dbFile)
+    db.exec('UPDATE t_Schema SET version=9999;')
+    db.close()
+
+    // now try to create a new cache
+    assert.throws(() => (cache = new FileCache(dbFile)))
   })
 })

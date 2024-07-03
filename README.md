@@ -5,30 +5,38 @@ SQLite-cache of files
 
 The default export. A class representing a cache of files
 
-### new Filecache (dbfile) => filecache
+### Filecache.limit
+
+Defaults to 256K. The limit above which we will not cache a file.
+
+### new Filecache(dbfile) => filecache
 
 Creates a new filecache
 
 ### .findFile(path) => Promise<stats>
 
-Returns an object with `{ mtime, size, ctype, status }` for the file
-Returns undefined if not found.
-Caches the result.
+Returns an object with the following keys:
+- `path` the path of the file
+- `size` the size or null-ish if it doesn't exist
+- `mtime` the mtime or null-ish
+- `missing` truthy if the file is missing
+- `cached` truthy if the file is cached
 
-### .readFile(path) => Promise<Buffer>
+Caches the file if it exists, can, and hasn't already been.
 
-Reads the file, ideally from the cache if we have it. If not, the file is cached for future reads.
+### .readFile(path) => Promise<Buffer|null>
 
-The contents are returned as a Buffer
+Reads the file and returns it. If it is too large to cache, returns `null`
+If it doesn't exist, throws a `ENOENT`.
 
-### .readFileStream(path) => Stream
+### .clear(path)
 
-Returns a readable stream of the file, ideally from the cache.
+Clears this path from the cache
 
-### .prefetch(opts) => Promise
+### .reset()
 
-Pre-fetches files if not already cached (and size/mtime unchanged). The options are:
-- `file` - prefetch this file
-- `dir` - Scan all files under this dir and prefetch these (takes precedence over `file`)
-- `filter` - if given, the function can examine the `fs.Dirent` to see if it should be pre-fetched
+Clears the whole cache
 
+### .close()
+
+Closes the database. Called automatically on exit
