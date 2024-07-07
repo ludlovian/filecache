@@ -118,7 +118,7 @@ suite('filecache', { concurrency: false }, () => {
 
     // write wrong version
     const db = new SQLite(dbFile)
-    db.exec('UPDATE t_Schema SET version=9999;')
+    db.exec('UPDATE _Schema SET version=9999;')
     db.close()
 
     // now try to create a new cache
