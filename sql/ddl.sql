@@ -2,7 +2,6 @@
 -- Cache File Database
 -------------------------------------
 
-PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
 
 BEGIN TRANSACTION;
@@ -177,7 +176,6 @@ END;
 -------------------------------------
 
 COMMIT;
-PRAGMA wal_checkpoint(truncate);
 VACUUM;
 
 -- vim: ts=2:sts=2:sw=2:et
