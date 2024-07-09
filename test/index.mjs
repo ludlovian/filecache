@@ -1,8 +1,8 @@
 import { suite, test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, unlinkSync, readFileSync } from 'node:fs'
+import { execSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import SQLite from 'better-sqlite3'
 
 import FileCache from '../src/index.mjs'
 
@@ -12,15 +12,13 @@ suite('filecache', { concurrency: false }, () => {
 
   let cache
   before(() => {
-    if (existsSync(dbFile)) unlinkSync(dbFile)
+    execSync(`rm -f ${dbFile}`)
   })
   after(() => {
-    if (cache) {
-      cache.reset()
-      cache.close()
-    }
+    if (cache) cache.reset()
+    if (cache) cache.close()
     cache = null
-    if (existsSync(dbFile)) unlinkSync(dbFile)
+    execSync(`rm -f ${dbFile}`)
   })
 
   test('create cache', () => {
@@ -110,18 +108,7 @@ suite('filecache', { concurrency: false }, () => {
     cache.reset()
   })
 
-  test('Make file with wrong version', () => {
-    // clear old db
-    cache.reset()
-    cache.close()
-    cache = null
-
-    // write wrong version
-    const db = new SQLite(dbFile)
-    db.exec('UPDATE _Schema SET version=9999;')
-    db.close()
-
-    // now try to create a new cache
-    assert.throws(() => (cache = new FileCache(dbFile)))
+  test('prefetch a directory', async () => {
+    await cache.prefetch('test')
   })
 })

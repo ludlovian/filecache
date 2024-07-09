@@ -1,69 +1,25 @@
-import process from 'node:process'
-import { readFile, stat } from 'node:fs/promises'
-import { resolve } from 'node:path'
-import SQLite from 'better-sqlite3'
-import Bouncer from '@ludlovian/bouncer'
-import { ddl } from './ddl.mjs'
+import { readFile, stat, readdir } from 'node:fs/promises'
+import { resolve, join } from 'node:path'
+import Database from '@ludlovian/sqlite'
+import createDDL from './ddl.mjs'
+import runtimeDDL from './temp.ddl.mjs'
+
+const SCHEMA_VERSION = 2
+const EVERYTHING = () => true
 
 export default class FileCache {
   static limit = 256 * 1024
   static commitDelay = 500
 
   #db
-  #inTransaction
-  #bouncerCommit
-
-  #query = {}
-  #storedProc = {}
 
   constructor (dbFile) {
-    this.#db = SQLite(dbFile)
-    this.#prepareDB()
-    process.on('exit', () => this.#close())
+    const opts = { createDDL, runtimeDDL, checkSchema: SCHEMA_VERSION }
+    this.#db = new Database(dbFile, opts)
   }
 
-  // ------------------------------------------------
-  // Set up
-
-  #prepareDB () {
-    const db = this.#db
-    // Set up the database and check the schema
-    db.exec(ddl)
-    const isValid = db
-      .prepare('select valid from _vSchema')
-      .pluck()
-      .get()
-    if (!isValid) {
-      this.#close()
-      throw new Error('Database schema invalid: ' + this.#db.name)
-    }
-
-    // queries
-    this.#query = {
-      getFileMetadata: db.prepare('select * from vFile where path=?'),
-      getFile: db.prepare('select data from FileContent where path=?').pluck()
-    }
-
-    // stored procs
-    this.#storedProc = {
-      begin: db.prepare('begin transaction'),
-      commit: db.prepare('commit'),
-      updateFile: db.prepare('insert into spUpdateFile values(?,?,?)'),
-      removeFile: db.prepare('insert into spRemoveFile values(?)'),
-      addFileContent: db.prepare('insert into spAddFileContent values(?,?)'),
-      reset: db.prepare('insert into spReset values(null)')
-    }
-
-    this.#bouncerCommit = new Bouncer({
-      after: FileCache.commitDelay,
-      fn: () => this.#commit()
-    })
-  }
-
-  #close () {
-    if (this.#db?.open) this.#db.close()
-    this.#bouncerCommit.cancel()
-    this.#db = undefined
+  close () {
+    this.#db.close()
   }
 
   // ------------------------------------------------
@@ -76,7 +32,7 @@ export default class FileCache {
   async findFile (path) {
     path = resolve(path)
 
-    const md = this.#getFileMetadata(path)
+    const md = this.#db.get('vFile', { path })
     return md ?? (await this.#fetchFileMetadata(path))
   }
 
@@ -90,13 +46,15 @@ export default class FileCache {
   async readFile (path) {
     path = resolve(path)
 
-    let md = this.#getFileMetadata(path)
+    let md = this.#db.get('vFile', { path })
     if (!md) md = await this.#fetchFileMetadata(path)
     if (md.missing) throw MissingFile(path)
     if (md.size > FileCache.limit) return null
-    if (md.cached) return this.#getFile(path)
+    if (md.cached) {
+      return this.#db.get('vFileContent', { path }).data
+    }
     const data = await readFile(path)
-    this.#addFileContent({ path, data })
+    this.#db.update('spAddFileContent', { path, data })
     return data
   }
 
@@ -105,7 +63,7 @@ export default class FileCache {
   // Removes any cache entries for this path
 
   clear (path) {
-    this.#removeFile({ path })
+    this.#db.update('spRemoveFile', { path })
   }
 
   // reset
@@ -113,11 +71,29 @@ export default class FileCache {
   // resets the database
 
   reset () {
-    this.#reset()
+    this.#db.update('spReset')
   }
 
-  close () {
-    this.#close()
+  // prefetch
+  //
+  async prefetch (root, filter, options) {
+    filter ??= EVERYTHING
+    const every = options?.every ?? 500
+    root = resolve(root)
+    const files = await readdir(root, {
+      recursive: true,
+      withFileTypes: true
+    })
+    await this.#db.transaction({ every }, async () => {
+      for (const dirent of files) {
+        if (dirent.isFile()) {
+          const path = join(dirent.parentPath, dirent.name)
+          if (filter(dirent.name, path)) {
+            await this.readFile(path)
+          }
+        }
+      }
+    })
   }
 
   // ------------------------------------------------
@@ -126,61 +102,15 @@ export default class FileCache {
   async #fetchFileMetadata (path) {
     try {
       const { size, mtimeMs: mtime } = await stat(path)
-      this.#updateFile({ path, size, mtime })
-      return { path, size, mtime, missing: 0, cached: 0 }
+      this.#db.update('spUpdateFile', { path, mtime, size })
+      return { path, mtime, size, missing: 0, cached: 0 }
     } catch (err) {
       // defensive
       /* c8 ignore next */
       if (err.code !== 'ENOENT') throw err
-      this.#updateFile({ path, size: null, mtime: null })
-      return { path, missing: 1 }
+      this.#db.update('spUpdateFile', { path, mtime: null, size: null })
+      return { path, missing: 1, cached: 0 }
     }
-  }
-
-  // ------------------------------------------------
-  // DB access
-  //
-
-  #getFileMetadata (path) {
-    return this.#query.getFileMetadata.get(path)
-  }
-
-  #getFile (path) {
-    return this.#query.getFile.get(path)
-  }
-
-  #begin () {
-    if (!this.#inTransaction) {
-      this.#storedProc.begin.run()
-      this.#inTransaction = true
-    }
-    this.#bouncerCommit.fire()
-  }
-
-  #commit () {
-    if (!this.#inTransaction) return
-    this.#storedProc.commit.run()
-    this.#inTransaction = false
-  }
-
-  #addFileContent ({ path, data }) {
-    this.#begin()
-    this.#storedProc.addFileContent.run(path, data)
-  }
-
-  #updateFile ({ path, size, mtime }) {
-    this.#begin()
-    this.#storedProc.updateFile.run(path, mtime, size)
-  }
-
-  #removeFile ({ path }) {
-    this.#begin()
-    this.#storedProc.removeFile.run(path)
-  }
-
-  #reset () {
-    this.#begin()
-    this.#storedProc.reset.run()
   }
 }
 

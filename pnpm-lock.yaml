@@ -11,16 +11,26 @@ importers:
       '@ludlovian/bouncer':
         specifier: github:ludlovian/bouncer
         version: https://codeload.github.com/ludlovian/bouncer/tar.gz/72617e7f6e5380acc917f58796e7a230d261d672
+      '@ludlovian/sqlite':
+        specifier: github:ludlovian/sqlite
+        version: https://codeload.github.com/ludlovian/sqlite/tar.gz/96dd1d5b5bb512b9fc88100325ae20a745abef8f(better-sqlite3@11.1.2)
     devDependencies:
       better-sqlite3:
-        specifier: ^11.0.0
-        version: 11.0.0
+        specifier: ^11.1.2
+        version: 11.1.2
 
 packages:
 
   '@ludlovian/bouncer@https://codeload.github.com/ludlovian/bouncer/tar.gz/72617e7f6e5380acc917f58796e7a230d261d672':
     resolution: {tarball: https://codeload.github.com/ludlovian/bouncer/tar.gz/72617e7f6e5380acc917f58796e7a230d261d672}
     version: 2.1.3
+
+  '@ludlovian/sqlite@https://codeload.github.com/ludlovian/sqlite/tar.gz/96dd1d5b5bb512b9fc88100325ae20a745abef8f':
+    resolution: {tarball: https://codeload.github.com/ludlovian/sqlite/tar.gz/96dd1d5b5bb512b9fc88100325ae20a745abef8f}
+    version: 0.1.3
+    hasBin: true
+    peerDependencies:
+      better-sqlite3: '>7.0.0'
 
   '@ludlovian/timer@https://codeload.github.com/ludlovian/timer/tar.gz/fa5cf51fba00f2715de2b182d1d546d7a8cbe883':
     resolution: {tarball: https://codeload.github.com/ludlovian/timer/tar.gz/fa5cf51fba00f2715de2b182d1d546d7a8cbe883}
@@ -29,8 +39,8 @@ packages:
   base64-js@1.5.1:
     resolution: {integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==}
 
-  better-sqlite3@11.0.0:
-    resolution: {integrity: sha512-1NnNhmT3EZTsKtofJlMox1jkMxdedILury74PwUbQBjWgo4tL4kf7uTAjU55mgQwjdzqakSTjkf+E1imrFwjnA==}
+  better-sqlite3@11.1.2:
+    resolution: {integrity: sha512-gujtFwavWU4MSPT+h9B+4pkvZdyOUkH54zgLdIrMmmmd4ZqiBIrRNBzNzYVFO417xo882uP5HBu4GjOfaSrIQw==}
 
   bindings@1.5.0:
     resolution: {integrity: sha512-p2q/t/mhvuOj/UeLlV6566GD/guowlr0hHxClI0W9m7MWYkL1F0hLo+0Aexs9HSPCtR1SXQ0TD3MMKrXZajbiQ==}
@@ -160,11 +170,16 @@ snapshots:
     dependencies:
       '@ludlovian/timer': https://codeload.github.com/ludlovian/timer/tar.gz/fa5cf51fba00f2715de2b182d1d546d7a8cbe883
 
+  '@ludlovian/sqlite@https://codeload.github.com/ludlovian/sqlite/tar.gz/96dd1d5b5bb512b9fc88100325ae20a745abef8f(better-sqlite3@11.1.2)':
+    dependencies:
+      '@ludlovian/bouncer': https://codeload.github.com/ludlovian/bouncer/tar.gz/72617e7f6e5380acc917f58796e7a230d261d672
+      better-sqlite3: 11.1.2
+
   '@ludlovian/timer@https://codeload.github.com/ludlovian/timer/tar.gz/fa5cf51fba00f2715de2b182d1d546d7a8cbe883': {}
 
   base64-js@1.5.1: {}
 
-  better-sqlite3@11.0.0:
+  better-sqlite3@11.1.2:
     dependencies:
       bindings: 1.5.0
       prebuild-install: 7.1.2
