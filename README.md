@@ -21,13 +21,27 @@ Returns an object with the following keys:
 - `mtime` the mtime or null-ish
 - `missing` truthy if the file is missing
 - `cached` truthy if the file is cached
+- `chunks` how many chunks we have stored
 
-Caches the file if it exists, can, and hasn't already been.
+### .readFile(path) => AsyncIterable
 
-### .readFile(path) => Promise<Buffer|null>
-
-Reads the file and returns it. If it is too large to cache, returns `null`
+Returns the file as an async iterable.
 If it doesn't exist, throws a `ENOENT`.
+
+### .streamFile(path) => Readable
+
+Returns the file as a readable stream
+
+### .refresh => Promise
+
+Checks the cached metadata against the real files, updating as required
+
+### .prefetch(dir, filter) => Promise
+
+Prefetches all the files in the dir and below.
+
+If given, `filter` is `(name, path) => Boolean` to say if this file
+should be pre-fetched.
 
 ### .clear(path)
 

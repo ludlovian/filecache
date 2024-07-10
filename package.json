@@ -25,10 +25,11 @@
   },
   "homepage": "https://github.com/ludlovian/filecache#readme",
   "devDependencies": {
-    "better-sqlite3": ">7.0.0"
+    "better-sqlite3": "^11.1.2"
   },
   "dependencies": {
     "@ludlovian/bouncer": "github:ludlovian/bouncer",
+    "@ludlovian/lock": "github:ludlovian/lock",
     "@ludlovian/sqlite": "github:ludlovian/sqlite"
   }
 }

@@ -1,17 +1,20 @@
-import { readFile, stat, readdir } from 'node:fs/promises'
+import { open, stat, readdir } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
+import { Readable } from 'node:stream'
 import Database from '@ludlovian/sqlite'
+import Lock from '@ludlovian/lock'
 import createDDL from './ddl.mjs'
 import runtimeDDL from './temp.ddl.mjs'
 
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 const EVERYTHING = () => true
 
 export default class FileCache {
-  static limit = 256 * 1024
+  static chunkSize = 64 * 1024
   static commitDelay = 500
 
   #db
+  #lock = new Lock()
 
   constructor (dbFile) {
     const opts = { createDDL, runtimeDDL, checkSchema: SCHEMA_VERSION }
@@ -32,30 +35,41 @@ export default class FileCache {
   async findFile (path) {
     path = resolve(path)
 
-    const md = this.#db.get('vFile', { path })
+    const md = this.#db.get('viewFile', { path })
     return md ?? (await this.#fetchFileMetadata(path))
   }
 
-  // async readFile (path) => Buffer | null
+  // ------------------------------------------------
+  // readFile (path)
   //
-  // If the file doesn't exist, we throw (you should have checked)
-  // If the file is too large, we return null
-  // If we have the file, or it is small enough, we
-  // return it, caching if required
+  // async generator to give you the file's contents
+  //
+  // throws if the file doesn't exist
 
-  async readFile (path) {
+  async * readFile (path) {
     path = resolve(path)
 
-    let md = this.#db.get('vFile', { path })
-    if (!md) md = await this.#fetchFileMetadata(path)
+    let md = await this.findFile(path)
     if (md.missing) throw MissingFile(path)
-    if (md.size > FileCache.limit) return null
-    if (md.cached) {
-      return this.#db.get('vFileContent', { path }).data
+    if (!md.cached) md = await this.#storeFileContent(path)
+    const { mtime, size, chunks } = md
+    for (let seq = 1; seq <= chunks; seq++) {
+      const parms = { path, seq, mtime, size }
+      const chunk = this.#db.get('viewFileChunk', parms)
+      yield chunk.data
     }
-    const data = await readFile(path)
-    this.#db.update('spAddFileContent', { path, data })
-    return data
+  }
+
+  // ------------------------------------------------
+  // streamFile (path)
+  //
+  // A readable file stream of the files contents
+  //
+
+  streamFile (path) {
+    return Readable.from(this.readFile(path), {
+      objectMode: false
+    })
   }
 
   // clear
@@ -63,7 +77,7 @@ export default class FileCache {
   // Removes any cache entries for this path
 
   clear (path) {
-    this.#db.update('spRemoveFile', { path })
+    this.#db.update('removeFile', { path })
   }
 
   // reset
@@ -71,25 +85,39 @@ export default class FileCache {
   // resets the database
 
   reset () {
-    this.#db.update('spReset')
+    this.#db.update('resetCache')
+  }
+
+  // refresh
+  async refresh () {
+    const ms = FileCache.commitDelay
+    await this.#db.asyncTransaction(ms, async () => {
+      const rows = this.#db.all('viewRealFiles')
+      for (const { path } of rows) {
+        const stats = await this.#stat(path)
+        // the act of storing deletes content if changed
+        // and is a NOOP is nothing has changed
+        this.#storeMetadata(path, stats)
+      }
+    })
   }
 
   // prefetch
   //
-  async prefetch (root, filter, options) {
-    filter ??= EVERYTHING
-    const every = options?.every ?? 500
+  async prefetch (root, filter = EVERYTHING) {
+    const ms = FileCache.commitDelay
     root = resolve(root)
     const files = await readdir(root, {
       recursive: true,
       withFileTypes: true
     })
-    await this.#db.transaction({ every }, async () => {
+    await this.#db.asyncTransaction(ms, async () => {
       for (const dirent of files) {
         if (dirent.isFile()) {
           const path = join(dirent.parentPath, dirent.name)
           if (filter(dirent.name, path)) {
-            await this.readFile(path)
+            this.#storeMetadata(path, await this.#stat(path))
+            await this.#storeFileContent(path)
           }
         }
       }
@@ -100,17 +128,57 @@ export default class FileCache {
   // Internal functions
 
   async #fetchFileMetadata (path) {
+    const stats = await this.#stat(path)
+    return this.#storeMetadata(path, stats)
+  }
+
+  async #stat (path) {
     try {
-      const { size, mtimeMs: mtime } = await stat(path)
-      this.#db.update('spUpdateFile', { path, mtime, size })
-      return { path, mtime, size, missing: 0, cached: 0 }
+      return await stat(path)
     } catch (err) {
       // defensive
       /* c8 ignore next */
       if (err.code !== 'ENOENT') throw err
-      this.#db.update('spUpdateFile', { path, mtime: null, size: null })
-      return { path, missing: 1, cached: 0 }
+      return null
     }
+  }
+
+  #storeMetadata (path, stats) {
+    const mtime = stats ? Math.trunc(stats.mtimeMs) : null
+    const size = stats ? stats.size : null
+    this.#db.update('updateFile', { path, mtime, size })
+    return this.#db.get('viewFile', { path })
+  }
+
+  #storeFileContent (path) {
+    // caching files is serialised, and with
+    // async transactions
+    return this.#lock.exec(async () => {
+      const ms = FileCache.commitDelay
+      await this.#db.asyncTransaction(ms, async () => {
+        const len = FileCache.chunkSize
+        const buff = Buffer.alloc(len)
+        let fh
+        try {
+          this.#db.update('removeFileChunks', { path })
+          fh = await open(path, 'r')
+          let bytesRead = len
+          for (let seq = 1; bytesRead === len; seq++) {
+            bytesRead = (await fh.read(buff, 0, len)).bytesRead
+            if (bytesRead) {
+              this.#db.update('addFileChunk', {
+                path,
+                seq,
+                data: bytesRead < len ? buff.slice(0, bytesRead) : buff
+              })
+            }
+          }
+        } finally {
+          await fh?.close()
+        }
+      })
+      return this.#db.get('viewFile', { path })
+    })
   }
 }
 

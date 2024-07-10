@@ -9,48 +9,89 @@
 
 -----------------------------------------------------------
 --
--- vFileContent
---
--- The content of a cached file
---
+-- Views used by the program
 
-CREATE TEMP VIEW vFileContent AS
-  SELECT path, data FROM FileContent;
+CREATE TEMP VIEW viewRealFiles AS
+  SELECT path, mtime, size
+  FROM viewFile
+  WHERE missing is false
+  ORDER BY path;
 
 -----------------------------------------------------------
 --
--- Stored procedures to update and delete data
+-- Clearing data
 --
 
-CREATE TEMP VIEW spRemoveFile(path) AS SELECT 0 WHERE 0;
-CREATE TEMP TRIGGER sptRemoveFile
-  INSTEAD OF INSERT ON spRemoveFile
+CREATE TEMP VIEW removeFile(path) AS SELECT 0 WHERE 0;
+CREATE TEMP TRIGGER removeFile_t
+  INSTEAD OF INSERT ON removeFile
 BEGIN
+  DELETE FROM FileChunk
+    WHERE fileId IN (
+      SELECT fileId FROM File WHERE path = NEW.path
+    );
   DELETE FROM File WHERE path = NEW.path;
 END;
 
-CREATE TEMP VIEW spAddFileContent(path, data) AS SELECT 0, 0 WHERE 0;
-CREATE TEMP TRIGGER sptAddFileContent
-  INSTEAD OF INSERT ON spAddFileContent
+CREATE TEMP VIEW removeFileChunks(path) AS SELECT 0 WHERE 0;
+CREATE TEMP TRIGGER removeFileChunks_t
+  INSTEAD OF INSERT ON removeFileChunks
 BEGIN
-  INSERT OR IGNORE INTO File (path) VALUES (NEW.path);
-  INSERT OR REPLACE INTO FileContent (path, data)
-    VALUES(NEW.path, NEW.data);
+  DELETE FROM FileChunk
+    WHERE fileId IN (
+      SELECT fileId FROM File WHERE path = NEW.path
+    );
 END;
 
-CREATE TEMP VIEW spUpdateFile(path, mtime, size) AS SELECT 0, 0, 0 WHERE 0;
-CREATE TEMP TRIGGER IF NOT EXISTS sptUpdateFile
-  INSTEAD OF INSERT ON spUpdateFile
+CREATE TEMP VIEW resetCache(unused) AS SELECT 0 WHERE 0;
+CREATE TEMP TRIGGER resetCache_t
+  INSTEAD OF INSERT ON resetCache
 BEGIN
-  INSERT OR REPLACE INTO File (path, mtime, size)
-    VALUES (NEW.path, NEW.mtime, NEW.size);
-END;
-
-CREATE TEMP VIEW spReset(unused) AS SELECT 0 WHERE 0;
-CREATE TEMP TRIGGER sptReset
-  INSTEAD OF INSERT ON spReset
-BEGIN
+  DELETE FROM FileChunk;
   DELETE FROM File;
+END;
+
+-----------------------------------------------------------
+--
+-- Updating metadata
+--
+-- Clears contents if anything has changed
+--
+
+CREATE TEMP VIEW updateFile(path, mtime, size) AS SELECT 0, 0, 0 WHERE 0;
+CREATE TEMP TRIGGER IF NOT EXISTS updateFile_t
+  INSTEAD OF INSERT ON updateFile
+BEGIN
+  -- Delete any content where the file mtime/size has changed
+  DELETE FROM FileChunk
+    WHERE fileId IN (
+      SELECT fileId
+        FROM File
+        WHERE path = NEW.path
+        AND (mtime, size) IS NOT (NEW.mtime, NEW.size)
+    );
+  -- Update the content where new or the mtime/size is different
+  INSERT INTO File (path, mtime, size)
+    VALUES (NEW.path, NEW.mtime, NEW.size)
+    ON CONFLICT (path) DO UPDATE
+      SET (mtime, size) = (NEW.mtime, NEW.size)
+      WHERE (mtime, size) IS NOT (NEW.mtime, NEW.size);
+END;
+
+-----------------------------------------------------------
+--
+-- Adding a chunk of content
+--
+--
+
+CREATE TEMP VIEW addFileChunk(path, seq, data) AS SELECT 0, 0 WHERE 0;
+CREATE TEMP TRIGGER addFileChunk_t
+  INSTEAD OF INSERT ON addFileChunk
+BEGIN
+  INSERT OR REPLACE INTO FileChunk (fileId, seq, data)
+    SELECT fileId, NEW.seq, NEW.data
+      FROM File
+      WHERE path = NEW.path;
 END;
 
 -- vim: ts=2:sts=2:sw=2:et
