@@ -31,5 +31,8 @@
     "@ludlovian/bouncer": "github:ludlovian/bouncer",
     "@ludlovian/lock": "github:ludlovian/lock",
     "@ludlovian/sqlite": "github:ludlovian/sqlite"
+  },
+  "peerDependencies": {
+    "better-sqlite3": ">7.0.0"
   }
 }
