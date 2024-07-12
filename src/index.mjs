@@ -6,7 +6,7 @@ import Lock from '@ludlovian/lock'
 import createDDL from './ddl.mjs'
 import runtimeDDL from './temp.ddl.mjs'
 
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 1
 const EVERYTHING = () => true
 
 export default class FileCache {
@@ -77,7 +77,7 @@ export default class FileCache {
   // Removes any cache entries for this path
 
   clear (path) {
-    this.#db.update('removeFile', { path })
+    this.#db.run('removeFile', { path })
   }
 
   // reset
@@ -85,7 +85,7 @@ export default class FileCache {
   // resets the database
 
   reset () {
-    this.#db.update('resetCache')
+    this.#db.run('resetCache')
   }
 
   // refresh
@@ -146,7 +146,7 @@ export default class FileCache {
   #storeMetadata (path, stats) {
     const mtime = stats ? Math.trunc(stats.mtimeMs) : null
     const size = stats ? stats.size : null
-    this.#db.update('updateFile', { path, mtime, size })
+    this.#db.run('updateFile', { path, mtime, size })
     return this.#db.get('viewFile', { path })
   }
 
@@ -160,13 +160,13 @@ export default class FileCache {
         const buff = Buffer.alloc(len)
         let fh
         try {
-          this.#db.update('removeFileChunks', { path })
+          this.#db.run('removeFileChunks', { path })
           fh = await open(path, 'r')
           let bytesRead = len
           for (let seq = 1; bytesRead === len; seq++) {
             bytesRead = (await fh.read(buff, 0, len)).bytesRead
             if (bytesRead) {
-              this.#db.update('addFileChunk', {
+              this.#db.run('addFileChunk', {
                 path,
                 seq,
                 data: bytesRead < len ? buff.slice(0, bytesRead) : buff

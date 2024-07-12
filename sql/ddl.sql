@@ -9,8 +9,8 @@ BEGIN TRANSACTION;
 --
 -- Holds the schema number
 --
-CREATE TABLE IF NOT EXISTS _Schema (id INTEGER PRIMARY KEY CHECK(id = 0), version INTEGER NOT NULL);
-INSERT OR REPLACE INTO _Schema VALUES(0, 3);
+CREATE TABLE IF NOT EXISTS schema (id INTEGER PRIMARY KEY CHECK(id = 0), version INTEGER NOT NULL);
+INSERT OR REPLACE INTO schema VALUES(0, 1);
 
 -----------------------------------------------------------
 -- File
