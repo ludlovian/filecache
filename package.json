@@ -10,7 +10,6 @@
     "clean": "rm -rf coverage/ node_modules/.cache/",
     "lint": "standard '{src,test}/**/*.mjs'|snazzy",
     "format": "prettier-standard '{src,test}/**/*.mjs'",
-    "build": "sql2mjs sql/ddl.sql src/ddl.mjs && sql2mjs sql/temp.sql src/temp.ddl.mjs",
     "test": "c8 node --test",
     "coverage": "npm run test && c8 report --reporter=html && sirv coverage/ -p 8000 -H"
   },
