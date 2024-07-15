@@ -16,7 +16,7 @@ importers:
         version: https://codeload.github.com/ludlovian/lock/tar.gz/d1ca32b46e1e59cb8d7736f64a438dabc570555c
       '@ludlovian/sqlite':
         specifier: github:ludlovian/sqlite
-        version: https://codeload.github.com/ludlovian/sqlite/tar.gz/9d45426517e0eaab089db3b7f57b7f208957fe93(better-sqlite3@11.1.2)
+        version: https://codeload.github.com/ludlovian/sqlite/tar.gz/80b57176a109fbcb9f3cf8768bf48e7e455486e7(better-sqlite3@11.1.2)
     devDependencies:
       better-sqlite3:
         specifier: ^11.1.2
@@ -32,9 +32,9 @@ packages:
     resolution: {tarball: https://codeload.github.com/ludlovian/lock/tar.gz/d1ca32b46e1e59cb8d7736f64a438dabc570555c}
     version: 0.1.0
 
-  '@ludlovian/sqlite@https://codeload.github.com/ludlovian/sqlite/tar.gz/9d45426517e0eaab089db3b7f57b7f208957fe93':
-    resolution: {tarball: https://codeload.github.com/ludlovian/sqlite/tar.gz/9d45426517e0eaab089db3b7f57b7f208957fe93}
-    version: 0.3.1
+  '@ludlovian/sqlite@https://codeload.github.com/ludlovian/sqlite/tar.gz/80b57176a109fbcb9f3cf8768bf48e7e455486e7':
+    resolution: {tarball: https://codeload.github.com/ludlovian/sqlite/tar.gz/80b57176a109fbcb9f3cf8768bf48e7e455486e7}
+    version: 0.4.0
     hasBin: true
     peerDependencies:
       better-sqlite3: '>7.0.0'
@@ -179,7 +179,7 @@ snapshots:
 
   '@ludlovian/lock@https://codeload.github.com/ludlovian/lock/tar.gz/d1ca32b46e1e59cb8d7736f64a438dabc570555c': {}
 
-  '@ludlovian/sqlite@https://codeload.github.com/ludlovian/sqlite/tar.gz/9d45426517e0eaab089db3b7f57b7f208957fe93(better-sqlite3@11.1.2)':
+  '@ludlovian/sqlite@https://codeload.github.com/ludlovian/sqlite/tar.gz/80b57176a109fbcb9f3cf8768bf48e7e455486e7(better-sqlite3@11.1.2)':
     dependencies:
       '@ludlovian/bouncer': https://codeload.github.com/ludlovian/bouncer/tar.gz/72617e7f6e5380acc917f58796e7a230d261d672
       better-sqlite3: 11.1.2
