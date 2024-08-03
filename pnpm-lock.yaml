@@ -16,7 +16,7 @@ importers:
         version: https://codeload.github.com/ludlovian/lock/tar.gz/d1ca32b46e1e59cb8d7736f64a438dabc570555c
       '@ludlovian/sqlite':
         specifier: github:ludlovian/sqlite
-        version: https://codeload.github.com/ludlovian/sqlite/tar.gz/fd760856f40feb7ee0d103d98c7e6222b70d3b71(better-sqlite3@11.1.2)
+        version: https://codeload.github.com/ludlovian/sqlite/tar.gz/4bba8e200549058e8d80b5e8e73d6392c9008cdd(better-sqlite3@11.1.2)
     devDependencies:
       better-sqlite3:
         specifier: ^11.1.2
@@ -32,9 +32,9 @@ packages:
     resolution: {tarball: https://codeload.github.com/ludlovian/lock/tar.gz/d1ca32b46e1e59cb8d7736f64a438dabc570555c}
     version: 0.1.0
 
-  '@ludlovian/sqlite@https://codeload.github.com/ludlovian/sqlite/tar.gz/fd760856f40feb7ee0d103d98c7e6222b70d3b71':
-    resolution: {tarball: https://codeload.github.com/ludlovian/sqlite/tar.gz/fd760856f40feb7ee0d103d98c7e6222b70d3b71}
-    version: 0.4.1
+  '@ludlovian/sqlite@https://codeload.github.com/ludlovian/sqlite/tar.gz/4bba8e200549058e8d80b5e8e73d6392c9008cdd':
+    resolution: {tarball: https://codeload.github.com/ludlovian/sqlite/tar.gz/4bba8e200549058e8d80b5e8e73d6392c9008cdd}
+    version: 0.4.6
     hasBin: true
     peerDependencies:
       better-sqlite3: '>7.0.0'
@@ -137,8 +137,8 @@ packages:
   safe-buffer@5.2.1:
     resolution: {integrity: sha512-rp3So07KcdmmKbGvgaNxQSJr7bGVSVk5S9Eq1F+ppbRo70+YeaDxkw5Dd8NPN+GD6bjnYm2VuPuCXmpuYvmCXQ==}
 
-  semver@7.6.2:
-    resolution: {integrity: sha512-FNAIBWCx9qcRhoHcgcJ0gvU7SN1lYU2ZXuSfl04bSC5OpvDHFyJCjdNHomPXxjQlCBU67YW64PzY7/VIEH7F2w==}
+  semver@7.6.3:
+    resolution: {integrity: sha512-oVekP1cKtI+CTDvHWYFUcMtsK/00wmAEfyqKfNdARm8u1wNVhSgaX7A8d4UuIlUI5e84iEwOhs7ZPYRmzU9U6A==}
     engines: {node: '>=10'}
     hasBin: true
 
@@ -179,7 +179,7 @@ snapshots:
 
   '@ludlovian/lock@https://codeload.github.com/ludlovian/lock/tar.gz/d1ca32b46e1e59cb8d7736f64a438dabc570555c': {}
 
-  '@ludlovian/sqlite@https://codeload.github.com/ludlovian/sqlite/tar.gz/fd760856f40feb7ee0d103d98c7e6222b70d3b71(better-sqlite3@11.1.2)':
+  '@ludlovian/sqlite@https://codeload.github.com/ludlovian/sqlite/tar.gz/4bba8e200549058e8d80b5e8e73d6392c9008cdd(better-sqlite3@11.1.2)':
     dependencies:
       '@ludlovian/bouncer': https://codeload.github.com/ludlovian/bouncer/tar.gz/72617e7f6e5380acc917f58796e7a230d261d672
       better-sqlite3: 11.1.2
@@ -246,7 +246,7 @@ snapshots:
 
   node-abi@3.65.0:
     dependencies:
-      semver: 7.6.2
+      semver: 7.6.3
 
   once@1.4.0:
     dependencies:
@@ -287,7 +287,7 @@ snapshots:
 
   safe-buffer@5.2.1: {}
 
-  semver@7.6.2: {}
+  semver@7.6.3: {}
 
   simple-concat@1.0.1: {}
 
